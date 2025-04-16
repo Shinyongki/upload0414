@@ -18,7 +18,25 @@ const PORT = process.env.PORT || 3000;
 // 기본 미들웨어 설정
 app.use(cors({
   credentials: true,
-  origin: true // 모든 도메인 허용 (개발 환경용)
+  origin: function(origin, callback) {
+    // 로컬 개발 환경 또는 Vercel 도메인 허용
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'https://upload0414.vercel.app',
+      'https://upload0414-git-master.vercel.app'
+    ];
+    
+    // origin이 undefined인 경우(예: 서버-서버 요청)나 허용된 도메인인 경우 허용
+    const originIsAllowed = !origin || allowedOrigins.includes(origin);
+    
+    console.log(`CORS 요청 origin: ${origin}, 허용여부: ${originIsAllowed}`);
+    
+    if (originIsAllowed) {
+      callback(null, true);
+    } else {
+      callback(new Error('CORS 정책에 의해 차단됨'));
+    }
+  }
 }));
 app.use(morgan('dev'));
 app.use(bodyParser.json());

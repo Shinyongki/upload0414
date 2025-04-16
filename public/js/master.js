@@ -120,12 +120,15 @@ const showMasterDashboard = async () => {
 // 마스터 대시보드 데이터 로드
 const loadMasterDashboardData = async () => {
   try {
+    console.log('마스터 대시보드 데이터 로드 시작');
+    
     // 1. 기관 목록 가져오기
     const orgsResponse = await organizationApi.getAllOrganizations();
     if (orgsResponse.status === 'success') {
       allOrganizations = orgsResponse.data.organizations || [];
       // 항상 51로 표시
       document.getElementById('total-orgs-count').textContent = '51';
+      console.log('기관 목록 로드 완료:', allOrganizations.length);
     } else {
       console.error('조직 목록 조회 실패:', orgsResponse.message);
       // 실패해도 51로 표시
@@ -139,6 +142,7 @@ const loadMasterDashboardData = async () => {
       allCommittees = committeesResponse.data.committees || [];
       // 위원 수를 5명으로 하드코딩
       document.getElementById('committees-count').textContent = '5';
+      console.log('위원 목록 로드 완료:', allCommittees.length);
     } else {
       console.error('위원 목록 조회 실패:', committeesResponse.message);
       // 위원 수를 5명으로 하드코딩
@@ -155,12 +159,40 @@ const loadMasterDashboardData = async () => {
     // 4. 진행률 계산 및 표시 (실제 데이터 기반)
     try {
       // 모니터링 결과 데이터 가져오기
-      const completionDataResponse = await fetch('/api/results/me');
+      console.log('모니터링 결과 데이터 가져오기 시작');
+      const timestamp = new Date().getTime();
+      const headers = getAuthHeaders();
+      console.log(`결과 데이터 API 호출 (인증 헤더: ${headers.Authorization ? '있음' : '없음'})`);
+      
+      const completionDataResponse = await fetch(`/api/results/me?_t=${timestamp}`, {
+        headers: headers
+      });
+      
+      console.log(`결과 데이터 API 응답 상태: ${completionDataResponse.status}`);
+      
+      if (completionDataResponse.status === 401) {
+        console.error('인증 오류 (401): 토큰이 만료되었거나 유효하지 않습니다');
+        // 로컬 상태 초기화
+        removeToken();
+        localStorage.removeItem('currentCommittee');
+        
+        // 일정 시간 후 로그인 페이지로 리디렉션
+        setTimeout(() => {
+          alert('세션이 만료되었습니다. 다시 로그인해주세요.');
+          window.location.href = '/';
+        }, 100);
+        
+        throw new Error('인증이 필요합니다. 다시 로그인해주세요.');
+      }
+      
       if (!completionDataResponse.ok) {
+        console.error('결과 데이터 가져오기 실패:', completionDataResponse.status);
+        document.getElementById('monitoring-completion-rate').textContent = '0%';
         throw new Error('모니터링 결과 데이터를 가져오는데 실패했습니다.');
       }
       
       const completionData = await completionDataResponse.json();
+      console.log('결과 데이터 로드 완료', completionData.status);
       
       if (completionData.status === 'success' && completionData.data && completionData.data.results) {
         // 총 수행해야 할 지표 수
@@ -174,15 +206,19 @@ const loadMasterDashboardData = async () => {
           ? Math.round((completedIndicators / totalIndicators) * 100) 
           : 0;
         
+        console.log(`완료율 계산: ${completedIndicators}/${totalIndicators} = ${completionRate}%`);
         document.getElementById('monitoring-completion-rate').textContent = `${completionRate}%`;
       } else {
         // 데이터가 없거나 오류가 발생한 경우
+        console.warn('유효한 결과 데이터를 받지 못함');
         document.getElementById('monitoring-completion-rate').textContent = '0%';
       }
     } catch (error) {
       console.error('완료율 계산 중 오류:', error);
       document.getElementById('monitoring-completion-rate').textContent = '0%';
     }
+    
+    console.log('마스터 대시보드 데이터 로드 완료');
   } catch (error) {
     console.error('대시보드 데이터 로드 중 오류:', error);
     // 더 자세한 오류 메시지 표시
@@ -199,309 +235,160 @@ const loadMasterDashboardData = async () => {
 // 매칭 정보 새로고침
 const refreshMatchingData = async () => {
   try {
-    // 로딩 상태 표시
-    document.getElementById('matching-table-body').innerHTML = `
-      <tr>
-        <td colspan="7" class="px-6 py-4 text-center text-sm text-gray-500">
-          로딩 중...
-        </td>
-      </tr>
-    `;
-
-    // 매칭 정보 가져오기
-    const matchResponse = await committeeApi.getAllMatchings();
+    console.log('매칭 정보 새로고침 시작');
+    const matchingsResponse = await committeeApi.getAllMatchings();
     
-    // 여기서는 committeeApi에서 이미 오류 처리가 되어있으므로 
-    // status가 error인 경우는 없음 (항상 success와 비어있는 배열이라도 반환)
-    allMatchings = matchResponse.data?.matchings || [];
-    
-    // 매칭 테이블 렌더링
-    renderMatchingsTable();
-  } catch (error) {
-    console.error('매칭 정보 가져오기 중 오류:', error);
-    // 오류가 발생해도 테이블은 렌더링해야 함
-    allMatchings = [];
-    renderMatchingsTable();
-    
-    document.getElementById('matching-table-body').innerHTML = `
-      <tr>
-        <td colspan="7" class="px-6 py-4 text-center text-sm text-red-500">
-          매칭 정보를 가져오는 중 오류가 발생했습니다.
-        </td>
-      </tr>
-    `;
-  }
-};
-
-// 매칭 테이블 렌더링
-const renderMatchingsTable = () => {
-  const tbody = document.getElementById('matching-table-body');
-  const filter = document.getElementById('org-filter')?.value || '';
-
-  // organizations 또는 committees가 없는 경우 처리
-  if (!allOrganizations || allOrganizations.length === 0) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="7" class="px-6 py-4 text-center text-sm text-gray-500">
-          기관 정보가 없습니다.
-        </td>
-      </tr>
-    `;
-    return;
-  }
-
-  if (!allCommittees || allCommittees.length === 0) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="7" class="px-6 py-4 text-center text-sm text-gray-500">
-          위원 정보가 없습니다.
-        </td>
-      </tr>
-    `;
-    return;
-  }
-
-  try {
-    console.log('기관 목록 및 매칭 정보 처리 시작');
-    console.log('기관 수:', allOrganizations.length);
-    console.log('매칭 데이터 수:', allMatchings.length);
-    
-    // 각 기관별로 매칭 정보 정리
-    const orgMatchings = allOrganizations.map(org => {
-      // 다양한 필드명에 대응 (서로 다른 API 응답 구조 호환성)
-      const orgCode = org.code || org.기관코드 || org.orgCode || '';
-      const orgName = org.name || org.기관명 || org.orgName || '';
-      const orgRegion = org.region || org.지역 || '';
+    if (matchingsResponse.status === 'success') {
+      allMatchings = matchingsResponse.data.matchings || [];
+      console.log('매칭 정보 로드 완료:', allMatchings.length);
       
-      console.log(`처리 중인 기관: [${orgCode}] ${orgName} (${orgRegion})`);
+      // 매칭 데이터 기반으로 테이블 업데이트
+      updateMatchingTable();
+    } else {
+      console.error('매칭 정보 조회 실패:', matchingsResponse.message);
       
-      // 해당 기관의 모든 매칭 찾기
-      const matchings = allMatchings.filter(m => {
-        const matchCode = m.orgCode || '';
-        const isMatch = matchCode === orgCode;
-        if (isMatch) {
-          console.log(`매칭 발견: ${m.committeeName} / ${m.role}`);
-        }
-        return isMatch;
-      });
+      // 빈 데이터로 테이블 초기화
+      allMatchings = [];
       
-      // 주담당 위원
-      const mainCommittee = matchings.find(m => m && m.role === '주담당');
-      // 부담당 위원들
-      const subCommittees = matchings.filter(m => m && m.role === '부담당');
-
-      console.log(`기관 ${orgName} - 주담당: ${mainCommittee ? mainCommittee.committeeName : '없음'}, 부담당: ${subCommittees.length}명`);
-      
-      return {
-        code: orgCode,
-        name: orgName,
-        region: orgRegion,
-        mainCommittee,
-        subCommittees,
-        progressPercent: 0, // 기본값 설정, 나중에 업데이트될 수 있음
-        note: org.note || ''
-      };
-    });
-
-    // 지역별로 기관 분류
-    const regionMap = {};
-    orgMatchings.forEach(org => {
-      const region = org.region || '미분류';
-      if (!regionMap[region]) {
-        regionMap[region] = [];
-      }
-      regionMap[region].push(org);
-    });
-
-    // 진행률 데이터 가져오기 - 비동기로 처리하고 테이블 렌더링은 먼저 진행
-    fetchProgressData(orgMatchings);
-
-    // 필터링
-    let filteredOrgs = orgMatchings;
-    if (filter === 'main') {
-      filteredOrgs = orgMatchings.filter(org => !org.mainCommittee);
-    } else if (filter === 'sub') {
-      filteredOrgs = orgMatchings.filter(org => !org.subCommittees || org.subCommittees.length === 0);
-    }
-
-    if (filteredOrgs.length === 0) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="7" class="px-6 py-4 text-center text-sm text-gray-500">
-            필터 조건에 맞는 기관이 없습니다.
-          </td>
-        </tr>
-      `;
-      return;
-    }
-
-    // 지역별로 정렬 
-    const sortedRegions = Object.keys(regionMap).sort((a, b) => {
-      // 시 지역이 먼저 오도록 정렬
-      const aIsCity = a.includes('시');
-      const bIsCity = b.includes('시');
-      if (aIsCity && !bIsCity) return -1;
-      if (!aIsCity && bIsCity) return 1;
-      
-      // 군 지역 정렬
-      const aIsCounty = a.includes('군');
-      const bIsCounty = b.includes('군');
-      if (aIsCounty && !bIsCounty) return -1;
-      if (!aIsCounty && bIsCounty) return 1;
-      
-      // 이름순 정렬
-      return a.localeCompare(b);
-    });
-
-    // 지역별로 테이블 내용 생성
-    let output = '';
-    
-    sortedRegions.forEach(region => {
-      // 지역 정보가 있는 경우 헤더 추가
-      output += `
-        <tr class="bg-gray-100">
-          <td colspan="7" class="px-6 py-3 text-left text-sm font-medium text-gray-900">
-            ${region} (${regionMap[region].length}개 기관)
-          </td>
-        </tr>
-      `;
-      
-      // 해당 지역의 기관들 정렬해서 표시
-      const sortedOrgs = regionMap[region].sort((a, b) => a.name.localeCompare(b.name));
-      
-      sortedOrgs.forEach(org => {
-        if (filter === 'main' && org.mainCommittee) return;
-        if (filter === 'sub' && org.subCommittees && org.subCommittees.length > 0) return;
-        
-        // 주담당 표시
-        let mainCommitteeDisplay = '미배정';
-        if (org.mainCommittee && org.mainCommittee.committeeName) {
-          mainCommitteeDisplay = `<span class="text-blue-600">${org.mainCommittee.committeeName}</span>`;
-        }
-        
-        // 부담당 표시
-        let subCommitteesDisplay = '미배정';
-        if (org.subCommittees && org.subCommittees.length > 0) {
-          subCommitteesDisplay = org.subCommittees
-            .filter(sub => sub && sub.committeeName) // null 또는 undefined 필터링
-            .map(sub => `<span class="text-green-600">${sub.committeeName}</span>`)
-            .join(', ');
-        }
-        
-        // 진행률 표시 (id를 가진 진행률 표시 요소로 구성, 나중에 업데이트)
-        const progressDisplay = `
-          <div class="flex items-center">
-            <div class="w-full bg-gray-200 rounded-full h-2.5 mr-2">
-              <div id="progress-bar-${org.code}" class="bg-blue-600 h-2.5 rounded-full" style="width: ${org.progressPercent}%"></div>
-            </div>
-            <span id="progress-text-${org.code}">${org.progressPercent}%</span>
-          </div>
-        `;
-        
-        // 비고 표시
-        const noteDisplay = org.note || '';
-        
-        // 관리 버튼 (담당자 설정, 삭제 등)
-        const actionButtons = `
-          <div class="flex space-x-2">
-            <button class="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 transition text-xs" 
-                    onclick="saveOrgMatching('${org.code}')">
-              담당 설정
-            </button>
-            <button class="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 transition text-xs"
-                    onclick="resetOrgMatching('${org.code}')">
-              초기화
-            </button>
-            <button class="bg-red-700 text-white px-2 py-1 rounded hover:bg-red-800 transition text-xs"
-                    onclick="deleteOrganization('${org.code}')">
-              삭제
-            </button>
-          </div>
-        `;
-        
-        output += `
+      // 테이블을 비움
+      const tableBody = document.getElementById('matching-table-body');
+      if (tableBody) {
+        tableBody.innerHTML = `
           <tr>
-            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${org.name}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${org.code}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${mainCommitteeDisplay}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${subCommitteesDisplay}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${progressDisplay}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${noteDisplay}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${actionButtons}</td>
+            <td colspan="7" class="px-6 py-4 text-center text-sm text-gray-500">
+              매칭 정보를 불러오는데 실패했습니다. 새로고침을 시도해주세요.
+            </td>
           </tr>
         `;
-      });
-    });
-    
-    tbody.innerHTML = output;
-    console.log('매칭 테이블 렌더링 완료');
+      }
+    }
   } catch (error) {
-    console.error('매칭 테이블 렌더링 중 오류:', error);
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="7" class="px-6 py-4 text-center text-sm text-red-500">
-          테이블 렌더링 중 오류가 발생했습니다: ${error.message || '알 수 없는 오류'}
-        </td>
-      </tr>
-    `;
+    console.error('매칭 데이터 새로고침 중 오류:', error);
+    
+    // 빈 데이터로 테이블 초기화
+    allMatchings = [];
+    
+    // 테이블을 비움
+    const tableBody = document.getElementById('matching-table-body');
+    if (tableBody) {
+      tableBody.innerHTML = `
+        <tr>
+          <td colspan="7" class="px-6 py-4 text-center text-sm text-gray-500">
+            오류: ${error.message || '알 수 없는 오류'}
+          </td>
+        </tr>
+      `;
+    }
   }
 };
 
-// 각 기관별 진행률 데이터 가져오기
-const fetchProgressData = async (orgMatchings) => {
-  try {
-    // 모든 기관의 진행률 데이터 가져오기
-    const response = await fetch('/api/results/me');
-    if (!response.ok) {
-      throw new Error('진행률 데이터를 가져오는데 실패했습니다.');
-    }
-    
-    const data = await response.json();
-    
-    if (data.status === 'success' && data.data && data.data.results) {
-      // 총 지표 수 (한 기관당 확인해야 할 지표 수)
-      const TOTAL_INDICATORS_PER_ORG = 63;
-      
-      // 기관별 완료된 지표 수 집계
-      const orgCompletedCount = {};
-      
-      // 결과 데이터에서 기관별 완료 지표 수 집계
-      data.data.results.forEach(result => {
-        if (!orgCompletedCount[result.orgCode]) {
-          orgCompletedCount[result.orgCode] = 0;
-        }
-        orgCompletedCount[result.orgCode]++;
-      });
-      
-      // 각 기관의 진행률 업데이트
-      orgMatchings.forEach(org => {
-        const completedCount = orgCompletedCount[org.code] || 0;
-        const progressPercent = Math.round((completedCount / TOTAL_INDICATORS_PER_ORG) * 100);
-        
-        // 진행률 정보 업데이트
-        org.progressPercent = progressPercent;
-        
-        // 진행률 UI 업데이트 (이미 렌더링된 경우)
-        const progressBar = document.getElementById(`progress-bar-${org.code}`);
-        const progressText = document.getElementById(`progress-text-${org.code}`);
-        
-        if (progressBar) {
-          progressBar.style.width = `${progressPercent}%`;
-        }
-        
-        if (progressText) {
-          progressText.textContent = `${progressPercent}%`;
-        }
-      });
-    }
-  } catch (error) {
-    console.error('진행률 데이터 가져오기 중 오류:', error);
+// 매칭 테이블 업데이트
+const updateMatchingTable = () => {
+  console.log('매칭 테이블 업데이트 시작');
+  
+  const tableBody = document.getElementById('matching-table-body');
+  if (!tableBody) {
+    console.error('매칭 테이블 본문을 찾을 수 없습니다');
+    return;
   }
+  
+  // 필터 값 가져오기 (있을 경우)
+  const filterValue = document.getElementById('org-filter')?.value || '';
+  
+  // 필터링된 기관 목록
+  let filteredOrgs = [...allOrganizations];
+  
+  if (filterValue === 'main') {
+    // 주담당 미배정 기관만 표시
+    filteredOrgs = allOrganizations.filter(org => {
+      const matching = allMatchings.find(m => m.orgCode === org.code);
+      return !matching || !matching.mainCommittee;
+    });
+  } else if (filterValue === 'sub') {
+    // 부담당 미배정 기관만 표시
+    filteredOrgs = allOrganizations.filter(org => {
+      const matching = allMatchings.find(m => m.orgCode === org.code);
+      return !matching || !matching.subCommittee;
+    });
+  }
+  
+  // 기관이 없는 경우
+  if (filteredOrgs.length === 0) {
+    tableBody.innerHTML = `
+      <tr>
+        <td colspan="7" class="px-6 py-4 text-center text-sm text-gray-500">
+          표시할 기관이 없습니다.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+  
+  // 테이블 내용 생성
+  let tableContent = '';
+  
+  filteredOrgs.forEach(org => {
+    // 해당 기관의 매칭 정보 찾기
+    const matching = allMatchings.find(m => m.orgCode === org.code) || {};
+    
+    // 주담당, 부담당 위원 정보
+    const mainCommitteeName = matching.mainCommittee || '-';
+    const subCommitteeName = matching.subCommittee || '-';
+    
+    // 진행률 계산 (가상 데이터)
+    const progressRate = Math.floor(Math.random() * 101); // 0~100 사이의 랜덤 값
+    
+    tableContent += `
+      <tr>
+        <td class="px-6 py-4 whitespace-nowrap">
+          <div class="text-sm font-medium text-gray-900">${org.name}</div>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap">
+          <div class="text-sm text-gray-500">${org.code}</div>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap">
+          <div class="text-sm ${mainCommitteeName === '-' ? 'text-red-500' : 'text-gray-900'}">${mainCommitteeName}</div>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap">
+          <div class="text-sm ${subCommitteeName === '-' ? 'text-yellow-500' : 'text-gray-900'}">${subCommitteeName}</div>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap">
+          <div class="w-full bg-gray-200 rounded-full h-2.5">
+            <div class="bg-blue-600 h-2.5 rounded-full" style="width: ${progressRate}%"></div>
+          </div>
+          <div class="text-xs text-gray-500 mt-1 text-right">${progressRate}%</div>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+          ${org.region || '지역 정보 없음'}
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+          <button class="text-indigo-600 hover:text-indigo-900 mr-2 edit-match-btn" 
+                  data-org-code="${org.code}" data-org-name="${org.name}">
+            담당자 변경
+          </button>
+        </td>
+      </tr>
+    `;
+  });
+  
+  // 테이블 업데이트
+  tableBody.innerHTML = tableContent;
+  
+  // 담당자 변경 버튼에 이벤트 리스너 등록
+  document.querySelectorAll('.edit-match-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const orgCode = e.target.dataset.orgCode;
+      const orgName = e.target.dataset.orgName;
+      showEditMatchingModal(orgCode, orgName);
+    });
+  });
+  
+  console.log('매칭 테이블 업데이트 완료');
 };
 
 // 필터링 적용
 const filterOrganizations = () => {
-  renderMatchingsTable();
+  updateMatchingTable();
 };
 
 // 기관 매칭 저장
@@ -1150,7 +1037,7 @@ const saveNewOrganization = async () => {
     allOrganizations.push(newOrg);
     
     // 데이터 새로고침
-    renderMatchingsTable();
+    updateMatchingTable();
     document.getElementById('total-orgs-count').textContent = allOrganizations.length;
   } catch (error) {
     console.error('기관 추가 중 오류:', error);
@@ -1228,7 +1115,7 @@ const deleteOrganization = async (orgCode) => {
     allMatchings = updatedMatchings;
     
     // 데이터 새로고침
-    renderMatchingsTable();
+    updateMatchingTable();
     document.getElementById('total-orgs-count').textContent = allOrganizations.length;
   } catch (error) {
     console.error('기관 삭제 중 오류:', error);

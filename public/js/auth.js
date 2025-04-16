@@ -8,11 +8,13 @@ let authToken = null;
 const setToken = (token) => {
   authToken = token;
   localStorage.setItem('authToken', token);
+  console.log('인증 토큰 저장됨');
 };
 
 const getToken = () => {
   if (!authToken) {
     authToken = localStorage.getItem('authToken');
+    console.log('로컬 스토리지에서 토큰 복구: ' + (authToken ? '성공' : '없음'));
   }
   return authToken;
 };
@@ -20,17 +22,24 @@ const getToken = () => {
 const removeToken = () => {
   authToken = null;
   localStorage.removeItem('authToken');
+  console.log('인증 토큰 제거됨');
 };
 
 // API 요청에 토큰 추가
 const getAuthHeaders = () => {
   const token = getToken();
-  return token ? {
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json'
-  } : {
+  const headers = {
     'Content-Type': 'application/json'
   };
+  
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+    console.log('요청에 인증 헤더 추가됨');
+  } else {
+    console.log('인증 헤더 없음 - 토큰 없음');
+  }
+  
+  return headers;
 };
 
 // 로그인 처리
@@ -46,6 +55,7 @@ const login = async (committeeName) => {
     });
     
     const data = await response.json();
+    console.log('로그인 응답:', data);
     
     if (data.status === 'success' && data.data && data.data.committee) {
       isAuthenticated = true;
@@ -54,6 +64,7 @@ const login = async (committeeName) => {
       
       // 로컬 스토리지에 정보 저장
       localStorage.setItem('currentCommittee', JSON.stringify(currentUser));
+      console.log('로그인 성공 - 사용자 정보 및 토큰 저장됨');
     }
     
     return data;
@@ -66,6 +77,7 @@ const login = async (committeeName) => {
 // 로그아웃 처리
 const logout = async () => {
   try {
+    console.log('로그아웃 시도');
     const response = await fetch('/auth/logout', {
       method: 'POST',
       headers: getAuthHeaders()
@@ -104,17 +116,31 @@ const checkAuth = async () => {
   try {
     const token = getToken();
     if (!token) {
+      console.log('인증 확인 실패: 토큰 없음');
       isAuthenticated = false;
       currentUser = null;
       updateAuthUI(false);
       return { status: 'error', message: '인증되지 않은 사용자입니다.' };
     }
 
+    console.log('서버에 인증 상태 확인 요청');
     // 서버에 인증 상태 확인 요청
     const response = await fetch('/auth/current', {
       headers: getAuthHeaders()
     });
+    
+    if (!response.ok) {
+      console.error('인증 확인 실패: 서버 응답 오류', response.status);
+      isAuthenticated = false;
+      currentUser = null;
+      removeToken();
+      localStorage.removeItem('currentCommittee');
+      updateAuthUI(false);
+      return { status: 'error', message: '인증 상태 확인 중 오류가 발생했습니다.' };
+    }
+    
     const data = await response.json();
+    console.log('인증 확인 응답:', data);
     
     if (data.status === 'success' && data.data && data.data.committee) {
       isAuthenticated = true;
@@ -122,7 +148,9 @@ const checkAuth = async () => {
       
       // 로컬 스토리지에 정보 저장
       localStorage.setItem('currentCommittee', JSON.stringify(currentUser));
+      console.log('인증 확인 성공 - 사용자 정보 업데이트됨');
     } else {
+      console.warn('인증 확인 실패: 유효하지 않은 응답');
       isAuthenticated = false;
       currentUser = null;
       removeToken();
@@ -146,12 +174,21 @@ const checkAuth = async () => {
 
 // 현재 사용자 정보 가져오기
 const getCurrentUser = () => {
+  if (!currentUser && localStorage.getItem('currentCommittee')) {
+    try {
+      currentUser = JSON.parse(localStorage.getItem('currentCommittee'));
+      console.log('로컬 스토리지에서 사용자 정보 복구됨');
+    } catch (e) {
+      console.error('로컬 스토리지에서 사용자 정보 복구 실패:', e);
+    }
+  }
   return currentUser;
 };
 
 // 인증이 필요한 화면인지 확인
 const requireAuth = () => {
   if (!isAuthenticated) {
+    console.log('인증 필요: 로그인 페이지로 리디렉션');
     // 로그인 화면으로 리다이렉트
     window.location.href = '/';
     return false;
@@ -161,7 +198,8 @@ const requireAuth = () => {
 
 // 마스터 권한 확인
 const isMaster = () => {
-  return isAuthenticated && currentUser && currentUser.role === 'master';
+  const user = getCurrentUser();
+  return isAuthenticated && user && user.role === 'master';
 };
 
 // 인증 UI 업데이트
@@ -182,6 +220,7 @@ const updateAuthUI = (isAuthenticated = false) => {
     
     // 마스터 계정이면 마스터 대시보드 표시
     if (isMaster()) {
+      console.log('마스터 계정 감지: 마스터 대시보드 표시');
       showMasterDashboard();
     }
   } else {

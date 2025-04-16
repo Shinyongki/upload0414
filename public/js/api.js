@@ -76,9 +76,12 @@ const api = {
   // 기본 API 호출 함수
   async call(method, endpoint, data = null) {
     try {
+      const headers = getAuthHeaders();
+      console.log(`API 호출: ${method} ${endpoint} (인증 헤더: ${headers.Authorization ? '있음' : '없음'})`);
+      
       const options = {
         method,
-        headers: getAuthHeaders()
+        headers
       };
 
       if (data) {
@@ -86,9 +89,25 @@ const api = {
       }
 
       const response = await fetch(endpoint, options);
+      console.log(`API 응답 상태: ${response.status} ${response.statusText}`);
+      
       const result = await response.json();
 
       if (!response.ok) {
+        // 401 인증 오류 처리
+        if (response.status === 401) {
+          console.error('인증 오류 (401): 토큰이 만료되었거나 유효하지 않습니다');
+          // 로컬 상태 초기화
+          removeToken();
+          localStorage.removeItem('currentCommittee');
+          
+          // 일정 시간 후 로그인 페이지로 리디렉션 (UI 업데이트 시간 주기)
+          setTimeout(() => {
+            alert('세션이 만료되었습니다. 다시 로그인해주세요.');
+            window.location.href = '/';
+          }, 100);
+        }
+        
         throw new Error(result.message || '서버 오류가 발생했습니다.');
       }
 
@@ -149,10 +168,34 @@ const organizationApi = {
       console.log('모든 기관 목록 가져오기 API 호출');
       // 캐시 방지를 위한 타임스탬프 추가
       const timestamp = new Date().getTime();
-      const response = await fetch(`/api/organizations?_t=${timestamp}`);
+      const headers = getAuthHeaders();
+      console.log(`기관 목록 API 호출 (인증 헤더: ${headers.Authorization ? '있음' : '없음'})`);
+      
+      const response = await fetch(`/api/organizations?_t=${timestamp}`, {
+        headers: headers
+      });
+      
+      console.log(`기관 목록 API 응답 상태: ${response.status}`);
+      
+      if (response.status === 401) {
+        console.error('인증 오류 (401): 토큰이 만료되었거나 유효하지 않습니다');
+        // 로컬 상태 초기화
+        removeToken();
+        localStorage.removeItem('currentCommittee');
+        
+        // 일정 시간 후 로그인 페이지로 리디렉션
+        setTimeout(() => {
+          alert('세션이 만료되었습니다. 다시 로그인해주세요.');
+          window.location.href = '/';
+        }, 100);
+        
+        throw new Error('인증이 필요합니다. 다시 로그인해주세요.');
+      }
+      
       if (!response.ok) {
         throw new Error('기관 목록을 가져오는데 실패했습니다.');
       }
+      
       return await response.json();
     } catch (error) {
       console.error('기관 목록 가져오기 오류:', error);
@@ -166,10 +209,34 @@ const organizationApi = {
       console.log('내 담당 기관 목록 가져오기 API 호출');
       // 캐시 방지를 위한 타임스탬프 추가
       const timestamp = new Date().getTime();
-      const response = await fetch(`/api/organizations/my?_t=${timestamp}`);
+      const headers = getAuthHeaders();
+      console.log(`담당 기관 목록 API 호출 (인증 헤더: ${headers.Authorization ? '있음' : '없음'})`);
+      
+      const response = await fetch(`/api/organizations/my?_t=${timestamp}`, {
+        headers: headers
+      });
+      
+      console.log(`담당 기관 목록 API 응답 상태: ${response.status}`);
+      
+      if (response.status === 401) {
+        console.error('인증 오류 (401): 토큰이 만료되었거나 유효하지 않습니다');
+        // 로컬 상태 초기화
+        removeToken();
+        localStorage.removeItem('currentCommittee');
+        
+        // 일정 시간 후 로그인 페이지로 리디렉션
+        setTimeout(() => {
+          alert('세션이 만료되었습니다. 다시 로그인해주세요.');
+          window.location.href = '/';
+        }, 100);
+        
+        throw new Error('인증이 필요합니다. 다시 로그인해주세요.');
+      }
+      
       if (!response.ok) {
         throw new Error('담당 기관 목록을 가져오는데 실패했습니다.');
       }
+      
       return await response.json();
     } catch (error) {
       console.error('담당 기관 목록 가져오기 오류:', error);
@@ -576,7 +643,30 @@ const committeeApi = {
       console.log('모든 위원 목록 가져오기 API 호출');
       // 캐시 방지를 위한 타임스탬프 추가
       const timestamp = new Date().getTime();
-      const response = await fetch(`/api/committees/all?_t=${timestamp}`);
+      const headers = getAuthHeaders();
+      console.log(`위원 목록 API 호출 (인증 헤더: ${headers.Authorization ? '있음' : '없음'})`);
+      
+      const response = await fetch(`/api/committees/all?_t=${timestamp}`, {
+        headers: headers
+      });
+      
+      console.log(`위원 목록 API 응답 상태: ${response.status}`);
+      
+      if (response.status === 401) {
+        console.error('인증 오류 (401): 토큰이 만료되었거나 유효하지 않습니다');
+        // 로컬 상태 초기화
+        removeToken();
+        localStorage.removeItem('currentCommittee');
+        
+        // 일정 시간 후 로그인 페이지로 리디렉션
+        setTimeout(() => {
+          alert('세션이 만료되었습니다. 다시 로그인해주세요.');
+          window.location.href = '/';
+        }, 100);
+        
+        throw new Error('인증이 필요합니다. 다시 로그인해주세요.');
+      }
+      
       if (!response.ok) {
         throw new Error('위원 목록을 가져오는데 실패했습니다.');
       }
@@ -643,14 +733,38 @@ const committeeApi = {
       console.log('모든 위원-기관 매칭 정보 가져오기 API 호출');
       // 캐시 방지를 위한 타임스탬프 추가
       const timestamp = new Date().getTime();
-      const response = await fetch(`/api/committees/matching?_t=${timestamp}`);
+      const headers = getAuthHeaders();
+      console.log(`매칭 정보 API 호출 (인증 헤더: ${headers.Authorization ? '있음' : '없음'})`);
+      
+      const response = await fetch(`/api/committees/matching?_t=${timestamp}`, {
+        headers: headers
+      });
+      
+      console.log(`매칭 정보 API 응답 상태: ${response.status}`);
+      
+      if (response.status === 401) {
+        console.error('인증 오류 (401): 토큰이 만료되었거나 유효하지 않습니다');
+        // 로컬 상태 초기화
+        removeToken();
+        localStorage.removeItem('currentCommittee');
+        
+        // 일정 시간 후 로그인 페이지로 리디렉션
+        setTimeout(() => {
+          alert('세션이 만료되었습니다. 다시 로그인해주세요.');
+          window.location.href = '/';
+        }, 100);
+        
+        throw new Error('인증이 필요합니다. 다시 로그인해주세요.');
+      }
+      
       if (!response.ok) {
         throw new Error('매칭 정보를 가져오는데 실패했습니다.');
       }
+      
       return await response.json();
     } catch (error) {
       console.error('매칭 정보 가져오기 오류:', error);
-      return { status: 'error', message: error.message, data: { matchings: [] } };
+      return { status: 'error', message: error.message };
     }
   },
   
