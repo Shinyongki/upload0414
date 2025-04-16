@@ -1,0 +1,128 @@
+require('dotenv').config();
+const express = require('express');
+const path = require('path');
+const bodyParser = require('body-parser');
+const cors = require('cors');
+const session = require('express-session');
+const flash = require('connect-flash');
+const morgan = require('morgan');
+
+// 라우트 가져오기
+const apiRoutes = require('./routes/api');
+const authRoutes = require('./routes/auth');
+const indexRoutes = require('./routes/index');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// 기본 미들웨어 설정
+app.use(cors({
+  credentials: true,
+  origin: true // 모든 도메인 허용 (개발 환경용)
+}));
+app.use(morgan('dev'));
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, 'public')));
+
+// 세션 설정
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'monitoring_session_secret',
+  resave: true, // 세션을 항상 저장
+  saveUninitialized: true,
+  cookie: { 
+    secure: false, // 개발 환경이므로 false
+    httpOnly: true, // JavaScript에서 쿠키에 접근할 수 없도록 설정
+    maxAge: 24 * 60 * 60 * 1000, // 24시간
+    path: '/' // 모든 경로에서 쿠키 사용 가능
+  },
+  name: 'monitoring.sid' // 세션 쿠키 이름 지정
+}));
+
+// connect-flash 설정
+try {
+  app.use(flash()); // connect-flash 사용
+  console.log('flash 미들웨어 설정 완료');
+} catch (error) {
+  console.error('flash 미들웨어 설정 오류:', error);
+}
+
+// req.flash가 없을 때 대체 함수 제공
+app.use((req, res, next) => {
+  if (!req.flash) {
+    req.flash = function(type, message) {
+      if (!req.session.flash) {
+        req.session.flash = {};
+      }
+      if (!req.session.flash[type]) {
+        req.session.flash[type] = [];
+      }
+      if (message) {
+        req.session.flash[type].push(message);
+      }
+      return req.session.flash[type];
+    };
+    console.log('flash 대체 함수 설정됨');
+  }
+  next();
+});
+
+// 디버깅용 미들웨어
+app.use((req, res, next) => {
+  console.log(`요청 수신: ${req.method} ${req.url}`);
+  if (req.session && req.session.committee) {
+    console.log(`인증된 사용자: ${req.session.committee.name}`);
+  } else {
+    console.log('인증되지 않은 요청');
+  }
+  next();
+});
+
+// 라우트 설정
+console.log('API 라우트 설정 시작...');
+// API 라우트: /api/* 경로 처리 
+app.use('/api', apiRoutes);
+console.log('API 라우트 설정 완료');
+
+console.log('인증 라우트 설정 시작...');
+// 인증 라우트: /auth/* 경로 처리
+app.use('/auth', authRoutes);
+console.log('인증 라우트 설정 완료');
+
+console.log('기본 라우트 설정 시작...');
+// 기본 페이지 라우트: 위의 모든 라우트에 해당하지 않는 경로 처리
+app.use('/', indexRoutes);
+console.log('기본 라우트 설정 완료');
+
+// SPA 지원을 위한 기본 경로 - API 경로가 아닌 모든 요청은 index.html로 제공
+app.use((req, res, next) => {
+  if (!req.path.startsWith('/api') && !req.path.startsWith('/auth')) {
+    return res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  }
+  next();
+});
+
+// 404 에러 처리
+app.use((req, res, next) => {
+  console.log(`404 Not Found: ${req.method} ${req.url}`);
+  res.status(404).json({
+    status: 'error',
+    message: '요청한 리소스를 찾을 수 없습니다.'
+  });
+});
+
+// 오류 처리 미들웨어
+app.use((err, req, res, next) => {
+  console.error('서버 오류:', err);
+  console.error(err.stack);
+  res.status(500).json({
+    status: 'error',
+    message: '서버 오류가 발생했습니다.',
+    error: process.env.NODE_ENV === 'development' ? err.message : {}
+  });
+});
+
+// 서버 시작
+app.listen(PORT, () => {
+  console.log(`서버가 http://localhost:${PORT} 에서 실행 중입니다.`);
+}); 
