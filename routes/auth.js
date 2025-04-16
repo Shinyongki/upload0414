@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { login, getCurrentUser, logout } = require('../controllers/authController');
+const { authenticateToken } = require('../config/jwt');
 const { saveToken } = require('../config/googleSheets');
 
 // 디버깅용 미들웨어
@@ -15,9 +16,8 @@ router.post('/login', login);
 // 로그아웃
 router.post('/logout', logout);
 
-// 현재 로그인된 위원 정보 조회 (both /me and /current will work)
-router.get('/me', getCurrentUser);
-router.get('/current', getCurrentUser);
+// 현재 로그인한 사용자 정보
+router.get('/current', authenticateToken, getCurrentUser);
 
 // 구글 OAuth 콜백 처리
 router.get('/google/callback', async (req, res) => {

@@ -1,23 +1,32 @@
 const express = require('express');
 const router = express.Router();
+const { authenticateToken } = require('../config/jwt');
 const organizationController = require('../controllers/organizationController');
-const indicatorController = require('../controllers/indicatorController');
 const resultController = require('../controllers/resultController');
+const indicatorController = require('../controllers/indicatorController');
 const committeeController = require('../controllers/committeeController');
-const { ensureAuthenticated } = require('../middleware/auth');
 
-// 디버그용 미들웨어
+// API 요청 디버깅용 미들웨어
 router.use((req, res, next) => {
-  console.log(`API 요청 처리 중: ${req.method} ${req.originalUrl}`);
+  console.log(`API 요청 처리 중: ${req.method} ${req.url}`);
   console.log('요청 헤더:', req.headers);
   
-  // 요청 응답 로깅
-  const oldSend = res.send;
-  res.send = function(data) {
-    console.log(`응답 데이터 (${req.originalUrl}):`, 
-      data && data.length > 100 ? data.substring(0, 100) + '...(truncated)' : data);
-    return oldSend.apply(res, arguments);
-  };
+  // 개발 환경에서는 인증 우회 허용 (필요 시 제거)
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`개발 환경에서 인증 우회됨: ${req.url}`);
+    
+    // 개발 환경에서 테스트를 위한 mock 사용자 설정
+    if (!req.user) {
+      req.user = {
+        name: 'DevUser',
+        role: 'master',
+        id: 'DEV001',
+        isAdmin: true
+      };
+    }
+    next();
+    return;
+  }
   
   next();
 });
@@ -34,8 +43,8 @@ router.get('/test', (req, res) => {
 
 // 위원 관련 API
 router.get('/committees', committeeController.getAllCommittees);
-router.get('/committees/me', ensureAuthenticated, committeeController.getCurrentCommittee);
-router.get('/committees/all', ensureAuthenticated, committeeController.getAllCommitteesFromSheet);
+router.get('/committees/me', authenticateToken, committeeController.getCurrentCommittee);
+router.get('/committees/all', authenticateToken, committeeController.getAllCommitteesFromSheet);
 
 // 테스트용 경로 추가
 router.get('/test-committees', (req, res) => {
@@ -54,12 +63,11 @@ router.get('/test-committees', (req, res) => {
 
 // 기관 관련 API
 router.get('/organizations', organizationController.getAllOrganizations);
-router.get('/organizations/my', ensureAuthenticated, organizationController.getMyOrganizations);
+router.get('/organizations/my', authenticateToken, organizationController.getMyOrganizations);
 router.get('/organizations/:orgCode', organizationController.getOrganizationByCode);
-router.post('/organizations/:orgCode/update', ensureAuthenticated, organizationController.updateOrganization);
-router.post('/organizations/add', ensureAuthenticated, organizationController.addOrganization);
-router.post('/organizations/delete', ensureAuthenticated, organizationController.deleteOrganization);
-router.post('/organizations/delete/:orgCode', ensureAuthenticated, organizationController.deleteOrganization);
+router.post('/organizations', authenticateToken, organizationController.addOrganization);
+router.put('/organizations/:orgCode', authenticateToken, organizationController.updateOrganization);
+router.delete('/organizations/:orgCode', authenticateToken, organizationController.deleteOrganization);
 
 // 테스트용 경로 추가
 router.get('/test-organizations', (req, res) => {
@@ -167,15 +175,15 @@ router.get('/test-indicators', (req, res) => {
 });
 
 // 모니터링 결과 관련 API
-router.post('/results', ensureAuthenticated, resultController.saveMonitoringResult);
-router.get('/results/organization/:orgCode', ensureAuthenticated, resultController.getResultsByOrganization);
-router.get('/results/me', ensureAuthenticated, resultController.getMyResults);
-router.get('/results/organization/:orgCode/indicator/:indicatorId', ensureAuthenticated, resultController.getResultByOrgAndIndicator);
-router.post('/results/cleanup', ensureAuthenticated, resultController.cleanupDuplicateResults);
+router.post('/results', authenticateToken, resultController.saveMonitoringResult);
+router.get('/results/organization/:orgCode', authenticateToken, resultController.getResultsByOrganization);
+router.get('/results/me', authenticateToken, resultController.getMyResults);
+router.get('/results/organization/:orgCode/indicator/:indicatorId', authenticateToken, resultController.getResultByOrgAndIndicator);
+router.post('/results/cleanup', authenticateToken, resultController.cleanupDuplicateResults);
 
 // 담당자 매칭 관련 API
-router.post('/committees/matching', ensureAuthenticated, committeeController.updateCommitteeMatching);
-router.get('/committees/matching', ensureAuthenticated, committeeController.getAllCommitteeMatchings);
+router.post('/committees/matching', authenticateToken, committeeController.updateCommitteeMatching);
+router.get('/committees/matching', authenticateToken, committeeController.getAllCommitteeMatchings);
 
 // 추가 테스트용 경로 - 매칭 정보
 router.get('/test-matchings', (req, res) => {

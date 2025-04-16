@@ -28,15 +28,14 @@ app.use(express.static(path.join(__dirname, 'public')));
 // 세션 설정
 app.use(session({
   secret: process.env.SESSION_SECRET || 'monitoring_session_secret',
-  resave: true, // 세션을 항상 저장
-  saveUninitialized: true,
+  resave: false, 
+  saveUninitialized: false,
   cookie: { 
-    secure: false, // 개발 환경이므로 false
-    httpOnly: true, // JavaScript에서 쿠키에 접근할 수 없도록 설정
-    maxAge: 24 * 60 * 60 * 1000, // 24시간
-    path: '/' // 모든 경로에서 쿠키 사용 가능
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000 // 24시간
   },
-  name: 'monitoring.sid' // 세션 쿠키 이름 지정
+  name: 'monitoring.sid'
 }));
 
 // connect-flash 설정

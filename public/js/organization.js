@@ -51,7 +51,8 @@ const loadOrganizations = async () => {
     }
     
     console.log('기관 목록 로딩 시작');
-    const response = await organizationApi.getMyOrganizations();
+    // getMyOrganizations 함수가 이미 api.js에서 JWT 토큰을 사용하도록 수정됨
+    const response = await api.organizations.getMyOrganizations();
     console.log('받은 응답:', response);
     
     if (response && response.status === 'success') {
@@ -78,7 +79,7 @@ const loadOrganizations = async () => {
       return false;
     }
   } catch (error) {
-    console.error('기관 목록 로딩 중 오류 발생:', error);
+    console.error('ERROR: 기관 목록을 가져오는데 실패했습니다.', error);
     showMessage('기관 목록을 불러오는 중 오류가 발생했습니다.', 'error');
     
     // 오류 발생해도 UI 렌더링

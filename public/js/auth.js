@@ -2,6 +2,36 @@
 
 let isAuthenticated = false;
 let currentUser = null;
+let authToken = null;
+
+// 토큰 관리
+const setToken = (token) => {
+  authToken = token;
+  localStorage.setItem('authToken', token);
+};
+
+const getToken = () => {
+  if (!authToken) {
+    authToken = localStorage.getItem('authToken');
+  }
+  return authToken;
+};
+
+const removeToken = () => {
+  authToken = null;
+  localStorage.removeItem('authToken');
+};
+
+// API 요청에 토큰 추가
+const getAuthHeaders = () => {
+  const token = getToken();
+  return token ? {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  } : {
+    'Content-Type': 'application/json'
+  };
+};
 
 // 로그인 처리
 const login = async (committeeName) => {
@@ -12,8 +42,7 @@ const login = async (committeeName) => {
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ committeeName }),
-      credentials: 'include'
+      body: JSON.stringify({ committeeName })
     });
     
     const data = await response.json();
@@ -21,6 +50,7 @@ const login = async (committeeName) => {
     if (data.status === 'success' && data.data && data.data.committee) {
       isAuthenticated = true;
       currentUser = data.data.committee;
+      setToken(data.data.token);
       
       // 로컬 스토리지에 정보 저장
       localStorage.setItem('currentCommittee', JSON.stringify(currentUser));
@@ -36,13 +66,9 @@ const login = async (committeeName) => {
 // 로그아웃 처리
 const logout = async () => {
   try {
-    // 서버에 로그아웃 요청
     const response = await fetch('/auth/logout', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      credentials: 'include'
+      headers: getAuthHeaders()
     });
     
     const data = await response.json();
@@ -50,6 +76,7 @@ const logout = async () => {
     // 로컬 상태 초기화
     isAuthenticated = false;
     currentUser = null;
+    removeToken();
     localStorage.removeItem('currentCommittee');
     
     // UI 업데이트
@@ -64,6 +91,7 @@ const logout = async () => {
     // 오류가 발생해도 로컬 상태 초기화 및 UI 업데이트
     isAuthenticated = false;
     currentUser = null;
+    removeToken();
     localStorage.removeItem('currentCommittee');
     updateAuthUI(false);
     window.location.href = '/';
@@ -74,9 +102,17 @@ const logout = async () => {
 // 현재 인증 상태 확인
 const checkAuth = async () => {
   try {
+    const token = getToken();
+    if (!token) {
+      isAuthenticated = false;
+      currentUser = null;
+      updateAuthUI(false);
+      return { status: 'error', message: '인증되지 않은 사용자입니다.' };
+    }
+
     // 서버에 인증 상태 확인 요청
     const response = await fetch('/auth/current', {
-      credentials: 'include'
+      headers: getAuthHeaders()
     });
     const data = await response.json();
     
@@ -89,6 +125,7 @@ const checkAuth = async () => {
     } else {
       isAuthenticated = false;
       currentUser = null;
+      removeToken();
       localStorage.removeItem('currentCommittee');
     }
     
@@ -100,6 +137,7 @@ const checkAuth = async () => {
     console.error('인증 상태 확인 중 오류 발생:', error);
     isAuthenticated = false;
     currentUser = null;
+    removeToken();
     localStorage.removeItem('currentCommittee');
     updateAuthUI(false);
     return { status: 'error', message: '인증 상태 확인 중 오류가 발생했습니다.' };

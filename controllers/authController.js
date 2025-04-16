@@ -1,6 +1,8 @@
 const { google } = require('googleapis');
 const { getAuthClient } = require('../config/googleSheets');
 const { getCommitteeOrganizations } = require('../services/sheetService');
+const { generateToken } = require('../config/jwt');
+const { findCommittee } = require('../services/committeeService');
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 
@@ -58,24 +60,16 @@ const login = async (req, res) => {
         id: 'MASTER'
       };
       
-      // 세션에 저장
-      req.session.committee = committee;
+      // JWT 토큰 생성
+      const token = generateToken(committee);
       
-      // 세션 저장 확인
-      req.session.save((err) => {
-        if (err) {
-          console.error('세션 저장 중 오류:', err);
-          return res.status(500).json({
-            status: 'error',
-            message: '세션 저장 중 오류가 발생했습니다.'
-          });
+      console.log('마스터 로그인 성공');
+      return res.json({
+        status: 'success',
+        data: { 
+          committee,
+          token 
         }
-        
-        console.log('마스터 로그인 성공:', req.sessionID);
-        return res.json({
-          status: 'success',
-          data: { committee }
-        });
       });
     }
     else {
@@ -92,24 +86,16 @@ const login = async (req, res) => {
       const organizations = await getCommitteeOrganizations(committeeName);
       committee.organizations = organizations;
 
-      // 세션에 위원 정보 저장
-      req.session.committee = committee;
+      // JWT 토큰 생성
+      const token = generateToken(committee);
       
-      // 세션 저장 확인
-      req.session.save((err) => {
-        if (err) {
-          console.error('세션 저장 중 오류:', err);
-          return res.status(500).json({
-            status: 'error',
-            message: '세션 저장 중 오류가 발생했습니다.'
-          });
+      console.log('일반 위원 로그인 성공:', committeeName);
+      return res.json({
+        status: 'success',
+        data: { 
+          committee,
+          token 
         }
-        
-        console.log('일반 위원 로그인 성공:', committeeName, req.sessionID);
-        return res.json({
-          status: 'success',
-          data: { committee }
-        });
       });
     }
   } catch (error) {
@@ -123,55 +109,26 @@ const login = async (req, res) => {
 
 // 로그아웃 처리
 const logout = (req, res) => {
-  console.log('로그아웃 요청:', req.sessionID);
-  
-  if (!req.session || !req.session.committee) {
-    console.log('이미 로그아웃된 상태');
-    return res.json({
-      status: 'success',
-      message: '이미 로그아웃되었습니다.'
-    });
-  }
-  
-  const userName = req.session.committee.name;
-  
-  req.session.destroy(err => {
-    if (err) {
-      console.error('로그아웃 중 오류 발생:', err);
-      return res.status(500).json({
-        status: 'error',
-        message: '로그아웃 처리 중 오류가 발생했습니다.'
-      });
-    }
-    
-    console.log('로그아웃 성공:', userName);
-    // 쿠키 삭제
-    res.clearCookie('monitoring.sid');
-    
-    return res.json({
-      status: 'success',
-      message: '로그아웃되었습니다.'
-    });
+  return res.json({
+    status: 'success',
+    message: '로그아웃되었습니다.'
   });
 };
 
 // 현재 인증 상태 확인
 const getCurrentUser = (req, res) => {
-  console.log('인증 상태 확인:', req.sessionID);
-  console.log('세션 데이터:', req.session);
-  
-  if (!req.session.committee) {
-    console.log('인증되지 않은 사용자 (세션에 committee 없음)');
+  // JWT 미들웨어에서 이미 검증이 완료되었으므로,
+  // req.user에 있는 정보를 반환
+  if (!req.user) {
     return res.status(401).json({
       status: 'error',
       message: '인증되지 않은 사용자입니다.'
     });
   }
-  
-  console.log('인증된 사용자:', req.session.committee.name);
-  res.json({
+
+  return res.json({
     status: 'success',
-    data: { committee: req.session.committee }
+    data: { committee: req.user }
   });
 };
 

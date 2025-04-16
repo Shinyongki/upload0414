@@ -78,10 +78,7 @@ const api = {
     try {
       const options = {
         method,
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        credentials: 'include'
+        headers: getAuthHeaders()
       };
 
       if (data) {
