@@ -2,7 +2,6 @@ const { google } = require('googleapis');
 const { getAuthClient } = require('../config/googleSheets');
 const { getCommitteeOrganizations } = require('../services/sheetService');
 const { generateToken } = require('../config/jwt');
-const { findCommittee } = require('../services/committeeService');
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 
